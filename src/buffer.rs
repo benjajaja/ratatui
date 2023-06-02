@@ -20,6 +20,7 @@ pub struct Cell {
     pub fg: Color,
     pub bg: Color,
     pub modifier: Modifier,
+    pub skip: bool,
 }
 
 impl Cell {
@@ -57,6 +58,11 @@ impl Cell {
         self
     }
 
+    pub fn set_skip(&mut self, skip: bool) -> &mut Cell {
+        self.skip = skip;
+        self
+    }
+
     pub fn style(&self) -> Style {
         Style::default()
             .fg(self.fg)
@@ -70,6 +76,7 @@ impl Cell {
         self.fg = Color::Reset;
         self.bg = Color::Reset;
         self.modifier = Modifier::empty();
+        self.skip = false;
     }
 }
 
@@ -80,6 +87,7 @@ impl Default for Cell {
             fg: Color::Reset,
             bg: Color::Reset,
             modifier: Modifier::empty(),
+            skip: false,
         }
     }
 }
@@ -106,7 +114,8 @@ impl Default for Cell {
 ///     symbol: String::from("r"),
 ///     fg: Color::Red,
 ///     bg: Color::White,
-///     modifier: Modifier::empty()
+///     modifier: Modifier::empty(),
+///     skip: false
 /// });
 /// buf.get_mut(5, 0).set_char('x');
 /// assert_eq!(buf.get(5, 0).symbol, "x");
@@ -462,10 +471,10 @@ impl Buffer {
         // Cells invalidated by drawing/replacing preceding multi-width characters:
         let mut invalidated: usize = 0;
         // Cells from the current buffer to skip due to preceding multi-width characters taking
-        // their place (the skipped cells should be blank anyway):
+        // their place (the skipped cells should be blank anyway), or due to per-cell-skipping:
         let mut to_skip: usize = 0;
         for (i, (current, previous)) in next_buffer.iter().zip(previous_buffer.iter()).enumerate() {
-            if (current != previous || invalidated > 0) && to_skip == 0 {
+            if !current.skip && (current != previous || invalidated > 0) && to_skip == 0 {
                 let (x, y) = self.pos_of(i);
                 updates.push((x, y, &next_buffer[i]));
             }
@@ -852,6 +861,18 @@ mod tests {
             diff,
             vec![(1, 0, &cell("─")), (2, 0, &cell("称")), (4, 0, &cell("号")),]
         );
+    }
+
+    #[test]
+    fn buffer_diffing_skip() {
+        let prev = Buffer::with_lines(vec!["123"]);
+        let mut next = Buffer::with_lines(vec!["456"]);
+        for i in 1..3 {
+            next.content[i].set_skip(true);
+        }
+
+        let diff = prev.diff(&next);
+        assert_eq!(diff, vec![(0, 0, &cell("4"))],);
     }
 
     #[test]

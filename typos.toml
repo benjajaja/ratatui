@@ -2,3 +2,6 @@
 
 [default.extend-words]
 ratatui = "ratatui"
+[type.txt]
+extend-glob = ["*.txt"]
+check-file = false
