@@ -1,0 +1,3 @@
+[type.sixel]
+extend-glob = ["*.sixel"]
+check-file = false
