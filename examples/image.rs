@@ -1,122 +1,188 @@
-use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
-    execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
-};
+use image::{imageops::FilterType, DynamicImage};
+use ratatui::backend::TermionBackend;
 use ratatui::{
-    backend::{Backend, CrosstermBackend},
+    backend::Backend,
     buffer::Buffer,
     layout::Rect,
     style::{Color, Modifier, Style},
     text::Span,
-    widgets::{Block, Borders, Clear, Paragraph, Wrap, Widget},
+    widgets::{Block, Borders, Clear, Paragraph, Widget, Wrap},
     Frame, Terminal,
 };
-use std::{
-    cmp,
-    error::Error,
-    io,
-    time::{Duration, Instant},
+use sixel_rs::{
+    encoder::{Encoder, QuickFrameBuilder},
+    optflags::EncodePolicy,
+    sys::PixelFormat,
+};
+use std::fs;
+use std::{cmp, error::Error, io, path::Path, sync::mpsc, thread, time::Duration};
+use termion::{
+    event::Key,
+    input::{MouseTerminal, TermRead},
+    raw::IntoRawMode,
+    screen::IntoAlternateScreen,
+    terminal_size, terminal_size_pixels,
 };
 
-#[derive(Default)]
-pub struct Sixel<'a> {
-    data: &'a str,
+struct Image {
+    data: String,
+    rect: Rect,
 }
 
-impl<'a> Widget for Sixel<'a> {
+impl Widget for &Image {
     fn render(self, area: Rect, buf: &mut Buffer) {
         if area.width == 0 || area.height == 0 {
             return;
         }
         // Skip entire area
-        for y in area.top()..area.bottom() {
-            for x in area.left()..area.right() {
+        for y in self.rect.top()..self.rect.bottom() {
+            for x in self.rect.left()..self.rect.right() {
                 buf.get_mut(x, y).set_skip(true);
             }
         }
         // ...except the first cell which "prints" all the sixel data.
-        buf.get_mut(area.left(), area.top())
+        buf.get_mut(self.rect.left(), self.rect.top())
             .set_skip(false)
-            .set_symbol(self.data);
+            .set_symbol(self.data.as_str());
     }
 }
 
-impl<'a> Sixel<'a> {
-    pub fn data(mut self, data: &'a str) -> Sixel<'a> {
-        self.data = data;
-        self
+impl From<Sixel> for Image {
+    fn from(sixel: Sixel) -> Image {
+        Image {
+            data: sixel.data,
+            rect: sixel.rect,
+        }
     }
+}
+
+struct Sixel {
+    data: String,
+    rect: Rect,
+}
+
+const TMP_FILE: &'static str = "./assets/test_out.sixel";
+impl From<DynamicImage> for Sixel {
+    fn from(img: DynamicImage) -> Sixel {
+        let (img, rect) = resize_to_terminal(img);
+        let (w, h) = (img.width(), img.height());
+        let bytes = img.to_rgb8().as_raw().to_vec();
+        let encoder = Encoder::new().unwrap();
+        encoder.set_output(Path::new(TMP_FILE)).unwrap();
+        encoder.set_encode_policy(EncodePolicy::Fast).unwrap();
+        let frame = QuickFrameBuilder::new()
+            .width(w as _)
+            .height(h as _)
+            .format(PixelFormat::RGB888)
+            .pixels(bytes);
+
+        encoder.encode_bytes(frame).unwrap();
+
+        let data = fs::read_to_string(TMP_FILE).unwrap();
+        fs::remove_file(TMP_FILE).unwrap();
+        Sixel { data, rect }
+    }
+}
+
+fn resize_to_terminal(img: DynamicImage) -> (DynamicImage, Rect) {
+    let (cols, rows) = terminal_size().unwrap();
+    let (width, height) = terminal_size_pixels().unwrap();
+    let char_width = (width / cols) as u32;
+    let char_height = (height / rows) as u32;
+    let resize_w = img.width() - (img.width() % char_width);
+    let resize_h = img.height() - (img.height() % char_height);
+    let rect = Rect::new(
+        0,
+        0,
+        (resize_w / char_width).try_into().unwrap(),
+        (resize_h / char_height).try_into().unwrap(),
+    );
+    (
+        img.resize_to_fill(resize_w, resize_h, FilterType::Nearest),
+        rect,
+    )
 }
 
 struct App {
     scroll: u16,
+    image: Image,
 }
 
 impl App {
     fn new() -> App {
-        App { scroll: 0 }
+        let img = image::io::Reader::open("./assets/Ada.png")
+            .unwrap()
+            .decode()
+            .unwrap();
+
+        let sixel: Sixel = img.into();
+        App {
+            scroll: 0,
+            image: sixel.into(),
+        }
     }
 
     fn on_tick(&mut self) {
         self.scroll += 1;
-        self.scroll %= 30;
+        self.scroll %= 10;
     }
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-    // setup terminal
-    enable_raw_mode()?;
-    let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
-    let backend = CrosstermBackend::new(stdout);
-    let mut terminal = Terminal::new(backend)?;
-
-    // create app and run it
-    let tick_rate = Duration::from_millis(250);
     let app = App::new();
-    let res = run_app(&mut terminal, app, tick_rate);
-
-    // restore terminal
-    disable_raw_mode()?;
-    execute!(
-        terminal.backend_mut(),
-        LeaveAlternateScreen,
-        DisableMouseCapture
-    )?;
-    terminal.show_cursor()?;
-
-    if let Err(err) = res {
-        println!("{err:?}");
-    }
-
-    Ok(())
+    let tick_rate = Duration::from_millis(250);
+    return run(app, tick_rate);
 }
 
-fn run_app<B: Backend>(
-    terminal: &mut Terminal<B>,
-    mut app: App,
-    tick_rate: Duration,
-) -> io::Result<()> {
-    let mut last_tick = Instant::now();
-    loop {
-        terminal.draw(|f| ui(f, &app))?;
+fn run(mut app: App, tick_rate: Duration) -> Result<(), Box<dyn Error>> {
+    let stdout = io::stdout()
+        .into_raw_mode()
+        .unwrap()
+        .into_alternate_screen()
+        .unwrap();
+    let stdout = MouseTerminal::from(stdout);
+    let backend = TermionBackend::new(stdout);
+    let mut terminal = Terminal::new(backend)?;
 
-        let timeout = tick_rate
-            .checked_sub(last_tick.elapsed())
-            .unwrap_or_else(|| Duration::from_secs(0));
-        if crossterm::event::poll(timeout)? {
-            if let Event::Key(key) = event::read()? {
-                if let KeyCode::Char('q') = key.code {
-                    return Ok(());
-                }
-            }
-        }
-        if last_tick.elapsed() >= tick_rate {
-            app.on_tick();
-            last_tick = Instant::now();
+    let events = events(tick_rate);
+    loop {
+        terminal.draw(|f| ui(f, &mut app))?;
+
+        match events.recv()? {
+            Event::Input(key) => match key {
+                Key::Char('q') => return Ok(()),
+                _ => {}
+            },
+            Event::Tick => app.on_tick(),
         }
     }
+}
+
+enum Event {
+    Input(Key),
+    Tick,
+}
+
+fn events(tick_rate: Duration) -> mpsc::Receiver<Event> {
+    let (tx, rx) = mpsc::channel();
+    let keys_tx = tx.clone();
+    thread::spawn(move || {
+        let stdin = io::stdin();
+        for key in stdin.keys().flatten() {
+            if let Err(err) = keys_tx.send(Event::Input(key)) {
+                eprintln!("{err}");
+                return;
+            }
+        }
+    });
+    thread::spawn(move || loop {
+        if let Err(err) = tx.send(Event::Tick) {
+            eprintln!("{err}");
+            break;
+        }
+        thread::sleep(tick_rate);
+    });
+    rx
 }
 
 fn ui<B: Backend>(f: &mut Frame<B>, app: &App) {
@@ -182,26 +248,24 @@ Samarita mía de mi corazón
     f.render_widget(Clear, area); //this clears out the background
     let inner_area = block.inner(area);
 
-    let data = std::fs::read_to_string("./assets/test.sixel").unwrap();
-    let sixel = Sixel::default().data(data.as_str());
-
+    // let sixel = Sixel::default().data(app.sixel_data);
     f.render_widget(block, area);
-    f.render_widget(sixel, inner_area);
+    f.render_widget(&app.image, inner_area);
 }
 
 fn centered_rect(width: u16, height: u16, r: Rect) -> Rect {
     return Rect {
-        x: if width < r.width {
-            r.width / 2 - width / 2
-        } else {
-            0
-        },
-        y: if height < r.height {
-            r.height / 2 - height / 2
-        } else {
-            0
-        },
+        x: center(width, r.width),
+        y: center(height, r.height),
         width: cmp::min(width, r.width),
         height: cmp::min(height, r.height),
     };
+}
+
+fn center(a: u16, b: u16) -> u16 {
+    if a < b {
+        b / 2 - a / 2
+    } else {
+        0
+    }
 }
