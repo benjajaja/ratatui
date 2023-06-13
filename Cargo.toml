@@ -38,7 +38,7 @@ cargo-args = ["-Zunstable-options", "-Zrustdoc-scrape-examples"]
 bitflags = "2.3"
 cassowary = "0.3"
 # crossterm = { version = "0.26", optional = true }
-crossterm = { git = "https://github.com/benjajaja/crossterm", branch = "font-size", optional = true }
+crossterm = { git = "https://github.com/benjajaja/crossterm", rev = "ad84a3829d55eac27cfdb7791b2e34c1732040ad", optional = true }
 indoc = "2.0"
 serde = { version = "1", optional = true, features = ["derive"] }
 termion = { version = "2.0", optional = true }

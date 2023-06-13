@@ -159,6 +159,12 @@ where
         Ok(Rect::new(0, 0, terminal.0, terminal.1))
     }
 
+    fn font_size(&mut self) -> Result<(u16, u16), io::Error> {
+        let size = termion::terminal_size()?;
+        let size_pixels = termion::terminal_size_pixels()?;
+        Ok(((size_pixels.0 / size.0) as _, (size_pixels.1 / size.1) as _))
+    }
+
     fn flush(&mut self) -> io::Result<()> {
         self.stdout.flush()
     }

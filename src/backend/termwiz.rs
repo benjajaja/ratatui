@@ -187,6 +187,17 @@ impl Backend for TermwizBackend {
         ))
     }
 
+    fn font_size(&mut self) -> Result<(u16, u16), io::Error> {
+        let b = self.buffered_terminal.terminal();
+        let screen_size = b
+            .get_screen_size()
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
+        Ok((
+            (screen_size.xpixel / screen_size.cols) as _,
+            (screen_size.ypixel / screen_size.rows) as _,
+        ))
+    }
+
     fn flush(&mut self) -> Result<(), io::Error> {
         self.buffered_terminal
             .flush()

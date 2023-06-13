@@ -167,6 +167,26 @@ where
         Ok(Rect::new(0, 0, width, height))
     }
 
+    fn font_size(&mut self) -> Result<(u16, u16), io::Error> {
+        let window_size = terminal::window_size()?;
+        if window_size.columns > 0 && window_size.rows > 0 {
+            let (width, height) = (
+                window_size.width / window_size.columns,
+                window_size.height / window_size.rows,
+            );
+            if width > 0 && height > 0 {
+                return Ok((
+                    window_size.width / window_size.columns,
+                    window_size.height / window_size.rows,
+                ));
+            }
+        }
+        Err(io::Error::new(
+            io::ErrorKind::Other,
+            "columns, rows, width or height is zero",
+        ))
+    }
+
     fn flush(&mut self) -> io::Result<()> {
         self.buffer.flush()
     }
