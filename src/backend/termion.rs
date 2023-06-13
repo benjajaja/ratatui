@@ -159,6 +159,12 @@ where
         Ok(Rect::new(0, 0, terminal.0, terminal.1))
     }
 
+    fn window_size(&mut self) -> Result<(Rect, (u16, u16)), io::Error> {
+        let terminal = termion::terminal_size()?;
+        let pixels = termion::terminal_size_pixels()?;
+        Ok((Rect::new(0, 0, terminal.0, terminal.1), pixels))
+    }
+
     fn flush(&mut self) -> io::Result<()> {
         self.stdout.flush()
     }

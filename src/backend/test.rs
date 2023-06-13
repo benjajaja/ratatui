@@ -177,6 +177,10 @@ impl Backend for TestBackend {
         Ok(Rect::new(0, 0, self.width, self.height))
     }
 
+    fn window_size(&mut self) -> Result<(Rect, (u16, u16)), io::Error> {
+        Ok((Rect::new(0, 0, self.width, self.height), (7, 12)))
+    }
+
     fn flush(&mut self) -> Result<(), io::Error> {
         Ok(())
     }

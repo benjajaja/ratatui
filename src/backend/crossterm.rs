@@ -167,6 +167,14 @@ where
         Ok(Rect::new(0, 0, width, height))
     }
 
+    fn window_size(&mut self) -> Result<(Rect, (u16, u16)), io::Error> {
+        let window_size = terminal::window_size()?;
+        Ok((
+            Rect::new(0, 0, window_size.columns, window_size.rows),
+            (window_size.width, window_size.height),
+        ))
+    }
+
     fn flush(&mut self) -> io::Result<()> {
         self.buffer.flush()
     }

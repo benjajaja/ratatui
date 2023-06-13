@@ -112,6 +112,9 @@ pub trait Backend {
     /// Get the size of the terminal screen as a [`Rect`].
     fn size(&self) -> Result<Rect, io::Error>;
 
+    /// Get the font size of the terminal screen as [`(width, height)`].
+    fn window_size(&mut self) -> Result<(Rect, (u16, u16)), io::Error>;
+
     /// Flush any buffered content to the terminal screen.
     fn flush(&mut self) -> Result<(), io::Error>;
 }

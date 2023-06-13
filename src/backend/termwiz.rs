@@ -11,7 +11,7 @@ use termwiz::{
     cell::{AttributeChange, Blink, Intensity, Underline},
     color::{AnsiColor, ColorAttribute, SrgbaTuple},
     surface::{Change, CursorVisibility, Position},
-    terminal::{buffered::BufferedTerminal, SystemTerminal, Terminal},
+    terminal::{buffered::BufferedTerminal, ScreenSize, SystemTerminal, Terminal},
 };
 
 use crate::{
@@ -169,22 +169,21 @@ impl Backend for TermwizBackend {
     }
 
     fn size(&self) -> Result<Rect, io::Error> {
-        let (term_width, term_height) = self.buffered_terminal.dimensions();
-        let max = u16::max_value();
-        Ok(Rect::new(
-            0,
-            0,
-            if term_width > usize::from(max) {
-                max
-            } else {
-                term_width as u16
-            },
-            if term_height > usize::from(max) {
-                max
-            } else {
-                term_height as u16
-            },
-        ))
+        Ok(self.buffered_terminal.dimensions().into())
+    }
+
+    fn window_size(&mut self) -> Result<(Rect, (u16, u16)), io::Error> {
+        let ScreenSize {
+            cols,
+            rows,
+            xpixel,
+            ypixel,
+        } = self
+            .buffered_terminal
+            .terminal()
+            .get_screen_size()
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
+        Ok(((cols, rows).into(), (u16_max(xpixel), u16_max(ypixel))))
     }
 
     fn flush(&mut self) -> Result<(), io::Error> {
@@ -219,5 +218,20 @@ impl From<Color> for ColorAttribute {
                 ColorAttribute::TrueColorWithDefaultFallback(SrgbaTuple::from((r, g, b)))
             }
         }
+    }
+}
+
+impl From<(usize, usize)> for Rect {
+    fn from((cols, rows): (usize, usize)) -> Rect {
+        Rect::new(0, 0, u16_max(cols), u16_max(rows))
+    }
+}
+
+fn u16_max(i: usize) -> u16 {
+    let max = u16::max_value();
+    if i > usize::from(max) {
+        max
+    } else {
+        i as u16
     }
 }
