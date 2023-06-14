@@ -177,6 +177,10 @@ impl Backend for TestBackend {
         Ok(Rect::new(0, 0, self.width, self.height))
     }
 
+    fn font_size(&mut self) -> Result<(u16, u16), io::Error> {
+        Ok((7, 12))
+    }
+
     fn flush(&mut self) -> Result<(), io::Error> {
         Ok(())
     }
