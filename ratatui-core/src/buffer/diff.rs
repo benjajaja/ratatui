@@ -169,8 +169,20 @@ impl<'next> Iterator for BufferDiff<'_, 'next> {
                             end: trailing_end,
                             force: false,
                         });
-                    } else if cell_width > 1 {
-                        self.pos += cell_width.saturating_sub(1);
+                    } else if cell_width > 2 {
+                        // When `unicode_width` over-counts a grapheme cluster (e.g. an emoji
+                        // followed by an invalid Fitzpatrick modifier), the terminal renders it
+                        // as 2 columns while the buffer skips `cell_width` columns. The columns
+                        // beyond index i+1 are never covered by the emoji on screen, so stale
+                        // content from the previous frame lingers there as phantom artifacts.
+                        // Force-emit the phantom columns (i+2 … i+cell_width) to clear them.
+                        self.trailing = Some(TrailingState {
+                            next_index: i + 2,
+                            end: i + cell_width,
+                            force: true,
+                        });
+                    } else if cell_width == 2 {
+                        self.pos += 1;
                     } else if previous_width > cell_width
                         && (previous.bg != Color::Reset
                             || previous.modifier.intersects(VISIBLE_ON_BLANK))
